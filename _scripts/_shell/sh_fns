@@ -1,0 +1,10 @@
+#!/bin/sh
+
+function lcl() {
+    local browser_to_use="Google Chrome"
+    local uc_frontend_path="$HOME/development/uc-frontend"
+    if [ ! -z "$1" ]; then
+        browser_to_use=$1
+    fi
+    osascript ~/_scripts/_applescript/run-with-args.scpt "$HOME/_scripts/_applescript/run-uc-local.scpt" $uc_frontend_path $browser_to_use
+}
