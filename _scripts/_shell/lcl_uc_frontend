@@ -1,0 +1,33 @@
+#!/bin/sh
+[[ $COMMON_SOURCED != "true" && -f ~/_scripts/_shell/common ]] && source ~/_scripts/_shell/common --source-only
+
+# Command to kick off the bootstrapping process
+function lcl() {
+    base_path_flag="$HOME/development/uc-frontend"
+    browser_flag="Google Chrome"
+    dev_app_flag="video-studio"
+
+    print_usage() {
+        printf "Usage: ..."
+    }
+
+    while getopts 'p:b:a:' flag; do
+        case "${flag}" in
+            p) base_path_flag="${OPTARG}" ;;
+            b) browser_flag="${OPTARG}" ;;
+            a) dev_app_flag="${OPTARG}" ;;
+            *) print_usage
+            exit 1 ;;
+        esac
+    done
+
+    local uc_frontend_path="$base_path_flag"
+    local term_app=$(get_app_info)
+    local browser_to_use="$browser_flag"
+    local local_app_dev="$dev_app_flag"
+    osascript ~/_scripts/_applescript/run-with-args.scpt "$HOME/_scripts/_applescript/run-uc-local.scpt" $uc_frontend_path $term_app $browser_to_use $local_app_dev
+}
+
+if [ "${1}" != "--source-only" ]; then
+    lcl "${@}"
+fi

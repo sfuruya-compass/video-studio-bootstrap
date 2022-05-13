@@ -1,10 +1,19 @@
 #!/bin/sh
 
-function lcl() {
-    local browser_to_use="Google Chrome"
-    local uc_frontend_path="$HOME/development/uc-frontend"
-    if [ ! -z "$1" ]; then
-        browser_to_use=$1
-    fi
-    osascript ~/_scripts/_applescript/run-with-args.scpt "$HOME/_scripts/_applescript/run-uc-local.scpt" $uc_frontend_path $browser_to_use
+local shell_scripts_dir="$HOME/_scripts/_shell"
+local funcs_list=(
+    "$shell_scripts_dir/common"
+    "$shell_scripts_dir/select_option"
+    "$shell_scripts_dir/lcl_uc_frontend"
+    # "$shell_scripts_dir/togif"
+    # "$shell_scripts_dir/togif_bash"
+    # "$shell_scripts_dir/togif_zsh"
+)
+
+function source_files() {
+    for i in "${funcs_list[@]}"; do
+        [[ -f $i ]] && source $i --source-only
+    done
 }
+
+source_files

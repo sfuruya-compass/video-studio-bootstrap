@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+function togif() {
+    if [ -n "$ZSH_VERSION" ]; then
+        togif_zsh
+    else
+        togif_bash
+    fi
+}

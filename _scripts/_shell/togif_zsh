@@ -1,0 +1,141 @@
+#!/bin/bash
+
+# if shared functions (e.g. `ralign`, `echolor`, etc) are not sourced in already
+[[ $COMMON_SOURCED != "true" && -f ~/_scripts/_shell/common ]] && source ~/_scripts/_shell/common --source-only
+
+# convert video to gif
+function togif_zsh {
+    echo
+    echolor magenta ">>>>>>>>>>>>>>>>>>>>>>>>> Converting mov -> gif >>>>>>>>>>>>>>>>>>>>>>>>>"
+    echo
+    echolor cyan "$(ralign -s 'Notes:')"
+    ralign; echolor cyan "- Press ENTER for default values"
+    ralign; echolor cyan "- Prompts marked with (**) are required"
+    ralign; echolor cyan "- [..] indicate default values"
+    echo
+    echo "-------------------------------------------------------------------------"
+    echo
+
+    local fallback_base_folder="$HOME/Documents"
+    local default_base_folder="$fallback_base_folder/_screencaps"
+
+    cd "$default_base_folder"
+    if [ -n "$2" ]
+    then
+        cd "$fallback_base_folder"
+    fi
+
+    echolor yellow "$(ralign -s 'Source video:')"
+    videos=($(find -E . -type f -regex ".+\.mov" | sort))
+    case `select_opt "${videos[@]}"` in
+        *)  source_fullpath=${videos[$?]};;
+    esac
+    echo
+
+    source_dirname=$(dirname "${source_fullpath}")
+    source_basename=$(basename "${source_fullpath}")
+    source_filename="${source_basename%.*}"
+
+    echolor yellow "$(ralign -s 'Output filename:')"
+    local output_fullpath
+    vared -p "$(ralign -s '[<source_video>.gif]:') " output_fullpath
+    default_output_filename="${source_dirname}/${source_filename}"
+    output_fullpath="${output_fullpath:-${default_output_filename}}"
+    echo
+
+    echolor yellow "$(ralign -s 'Speed:')"
+    local speed
+    vared -p "$(ralign -s '[0.8]:') " speed
+    speed="${speed:=0.8}"
+    echo
+
+    echolor yellow "$(ralign -s 'FPS:')"
+    local frames_per_sec
+    vared -p "$(ralign -s '[15]:') " frames_per_sec
+    frames_per_sec="${frames_per_sec:=15}"
+    echo
+
+    echolor yellow "$(ralign -s 'Scale:')"
+    local sc
+    vared -p "$(ralign -s '[1.0]:') " sc
+    sc="${sc:=1.0}"
+    scale="trunc(ih*${sc}*a/2)*2:trunc(${sc}*iw/a/2)*2"
+    echo
+
+    echolor yellow "$(ralign -s 'Fade-out (sec):')"
+    local fade_out
+    vared -p "$(ralign -s '[0.75]:') " fade_out
+    fade_out="${fade_out:=0.75}"
+    total_duration=$(ffprobe -loglevel error -show_entries format=duration -of default=nk=1:nw=1 "$source_fullpath")
+    fade_out_offset=$(bc -l <<< "($total_duration - $fade_out) * $speed")
+    # add a leading "0" if fade out starts less than a second into the video
+    [[ $fade_out_offset = \.* ]] && fade_out_offset="0$fade_out_offset"
+    echo
+
+    text_margin_factor_top="1.5"
+    text_margin_factor_bottom="((1 + $text_margin_factor_top))"
+
+    echolor yellow "$(ralign -s 'Timecode:')"
+    ralign -s "-> Vertical:"
+    tc_pos_options=("bottom" "top")
+    case `select_opt "${tc_pos_options[@]}"` in
+        *)  tc_pos_vert=${tc_pos_options[$?]};;
+    esac
+
+    ralign -s "-> Horizontal:"
+    tc_pos_options=("left" "right")
+    case `select_opt "${tc_pos_options[@]}"` in
+        *)  tc_pos_horiz=${tc_pos_options[$?]};;
+    esac
+
+    top="(text_h*$text_margin_factor_top)"
+    bottom="(h-(text_h*$text_margin_factor_bottom))"
+    left="(text_h*$text_margin_factor_top)"
+    right="((w-text_w)-(text_h*$text_margin_factor_top))"
+
+    case $tc_pos_vert in
+        top)    timecode_pos_y=$top;;
+        bottom) timecode_pos_y=$bottom;;
+    esac
+
+    case $tc_pos_horiz in
+        left)   timecode_pos_x=$left;;
+        right)  timecode_pos_x=$right;;
+    esac
+
+    eval $(ffprobe -v quiet -show_format -of flat=s=_ -show_entries stream=height,width $source_fullpath)
+    width_height="${streams_stream_0_width}x${streams_stream_0_height}"
+    echo
+
+    ffmpeg -i $source_fullpath -vf \
+    "fps=${frames_per_sec},\
+    setpts=${speed}*PTS,\
+    scale=${scale},\
+    fade=\
+        type=out:\
+        duration=${fade_out}:\
+        start_time=${fade_out_offset},\
+    split[s0][s1];[s0]palettegen=transparency_color=black[p];[s1][p]paletteuse,\
+    drawtext=\
+        fontfile=monofonto.ttf:\
+        fontsize=18:\
+        box=1:\
+        boxcolor=black@0.5:\
+        boxborderw=5:\
+        fontcolor=white@0.5:\
+        x=$timecode_pos_x:\
+        y=$timecode_pos_y:\
+        timecode='00\:00\:00\:00':\
+        rate=${frames_per_sec},\
+    format=yuv420p" \
+    -loop 0 $output_fullpath.gif
+    # drawbox=y=ih/PHI:\
+    #     color=black@0.4:\
+    #     width=iw:\
+    #     height=48:\
+    #     t=fill,\
+}
+
+if [ "${1}" != "--source-only" ]; then
+    togif_zsh "${@}"
+fi

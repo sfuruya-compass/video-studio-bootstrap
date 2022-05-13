@@ -1,0 +1,274 @@
+#!/bin/bash
+
+# Colored echo lines
+function echolor(){
+    local color=$1;
+    local exp=$2;
+    if ! [[ $color =~ '^[0-9]$' ]] ; then
+        case $(echo $color | tr '[:upper:]' '[:lower:]') in
+            black) color=0 ;;
+            red) color=1 ;;
+            green) color=2 ;;
+            yellow) color=3 ;;
+            blue) color=4 ;;
+            magenta) color=5 ;;
+            cyan) color=6 ;;
+            white|*) color=7 ;; # white or invalid color
+        esac
+    fi
+    tput setaf $color;
+    echo "$exp";
+    tput sgr0;
+}
+
+
+# Left pad
+function clmn() {
+    if [ -z "$2" ]
+    then
+        total_width=25
+    fi
+
+    str=$1
+    str_size=${#str}
+    padding=$(($total_width-$str_size))
+
+    if [ $padding -lt 0 ]
+    then
+        padding=0
+    fi
+
+    printf '%*s' "$padding"
+    if [ -n "$1" ]
+    then
+        echo "$str"
+    fi
+}
+
+# selects an option (see next function)
+function select_opt {
+    select_option "$@" 1>&2
+    local result=$?
+    echo $result
+    return $result
+}
+
+# Interactive dialog for shells (select from list)
+# 
+# Renders a text based list of options that can be selected by the
+# user using up, down and enter keys and returns the chosen option.
+#
+#   Arguments   : list of options, maximum of 256
+#                 "opt1" "opt2" ...
+#   Return value: selected index (0 for opt1, 1 for opt2 ...)
+# 
+function select_option {
+    # little helpers for terminal print control and key input
+    ESC=$(printf "\033")
+    cursor_blink_on()  { printf "$ESC[?25h"; }
+    cursor_blink_off() { printf "$ESC[?25l"; }
+    cursor_to()        { printf "$ESC[$1;${2:-1}H"; }
+    print_option()     { printf "                           $1 "; }
+    print_selected()   { printf "                          $ESC[7m $1 $ESC[27m"; }
+    get_cursor_row()   { IFS=';' read -sdR -p $'\E[6n' ROW COL; echo ${ROW#*[}; }
+    key_input()        {
+        read -s -n 3 key 2>/dev/null >&2
+        if [[ "$key" == "${ESC}[A" ]];  then echo "up";     break; fi
+        if [[ "$key" == "${ESC}[B" ]];  then echo "down";   break; fi
+        if [[ "$key" == "" ]];          then echo "return"; break; fi
+    }
+
+    # initially print empty new lines (scroll down if at bottom of screen)
+    for opt; do printf "\n"; done
+
+    # determine current screen position for overwriting the options
+    local lastrow=`get_cursor_row`
+    local startrow=$(($lastrow - $#))
+
+    # ensure cursor and input echoing back on upon a ctrl+c during read -s
+    trap "cursor_blink_on; stty echo; printf '\n'; exit" 2
+    cursor_blink_off
+
+    local selected=0
+    while true; do
+        # print options by overwriting the last lines
+        local idx=0
+        for opt; do
+            cursor_to $(($startrow + $idx))
+            if [ $idx -eq $selected ]; then
+                print_selected "$opt"
+            else
+                print_option "$opt"
+            fi
+            ((idx++))
+        done
+
+        # user key control
+        case `key_input` in
+            return) break;;
+            up)    ((selected--));
+                   if [ $selected -lt 0 ]; then selected=$(($# - 1)); fi;;
+            down)  ((selected++));
+                   if [ $selected -ge $# ]; then selected=0; fi;;
+        esac
+    done
+
+    # cursor position back to normal
+    cursor_to $lastrow
+    printf "\n"
+    cursor_blink_on
+
+    return $selected
+}
+
+
+# convert video to gif
+function togif_bash() {
+    echo
+    echolor magenta ">>>>>>>>>>>>>>>>>>>>>>>>> Converting mov -> gif >>>>>>>>>>>>>>>>>>>>>>>>>"
+    echo
+    echolor cyan "$(clmn 'Notes:')"
+    clmn
+    echolor cyan "- Press ENTER for default values"
+    clmn
+    echolor cyan "- Prompts marked with (**) are required"
+    clmn
+    echolor cyan "- [..] indicate default values"
+    echo
+    echo "-------------------------------------------------------------------------"
+    echo
+
+    local fallback_base_folder="$HOME/Documents"
+    local default_base_folder="$fallback_base_folder/_screencaps"
+
+    cd "$default_base_folder"
+    if [ -n "$2" ]
+    then
+        cd "$fallback_base_folder"
+    fi
+
+    echolor yellow "$(clmn 'Source video:')"
+    videos=($(find -E . -type f -regex ".+\.mov"))
+    case `select_opt "${videos[@]}"` in
+        *)  source_fullpath=${videos[$?]};;
+    esac
+    echo
+
+    # if [ -n "$2" ]
+    # then
+    #     source_fullpath=$2
+    #     echolor yellow "$(clmn 'Source video: ${source_fullpath}')"
+    # else
+    #     echolor yellow "$(clmn 'Source video:')"
+    #     videos=($(find -E . -type f -regex ".+\.mov"))
+    #     case `select_opt "${videos[@]}"` in
+    #         *)  source_fullpath=${videos[$?]};;
+    #     esac
+    # fi
+    # echo
+
+    source_dirname=$(dirname "${source_fullpath}")
+    source_basename=$(basename "${source_fullpath}")
+    source_filename="${source_basename%.*}"
+
+    echolor yellow "$(clmn 'Output filename:')"
+    read -p "$(clmn '[<source_video>.gif]:') " output_fullpath
+    default_output_filename="${source_dirname}/${source_filename}"
+    output_fullpath="${output_fullpath:-${default_output_filename}}"
+    echo
+
+    echolor yellow "$(clmn 'Speed:')"
+    read -p "$(clmn '[0.8]:') " speed
+    speed="${speed:=0.8}"
+    echo
+
+    echolor yellow "$(clmn 'FPS:')"
+    read -p "$(clmn '[15]:') " frames_per_sec
+    frames_per_sec="${frames_per_sec:=15}"
+    echo
+
+    echolor yellow "$(clmn 'Scale:')"
+    read -p "$(clmn '[1.0]:') " sc
+    sc="${sc:=1.0}"
+    scale="trunc(ih*${sc}*a/2)*2:trunc(${sc}*iw/a/2)*2"
+    echo
+
+    echolor yellow "$(clmn 'Fade-out (sec):')"
+    read -p "$(clmn '[0.75]:') " fade_out
+    fade_out="${fade_out:=0.75}"
+    total_duration=$(ffprobe -loglevel error -show_entries format=duration -of default=nk=1:nw=1 "$source_fullpath")
+    fade_out_offset=$(bc -l <<< "($total_duration - $fade_out) * $speed")
+    echo
+
+    text_margin_factor_top="1.5"
+    text_margin_factor_bottom="((1 + $text_margin_factor_top))"
+
+    echolor yellow "$(clmn 'Timecode:')"
+    clmn "-> Vertical:"
+    tc_pos_options=("bottom" "top")
+    case `select_opt "${tc_pos_options[@]}"` in
+        *)  tc_pos_vert=${tc_pos_options[$?]};;
+    esac
+    echo
+
+    clmn "-> Horizontal:"
+    tc_pos_options=("left" "right")
+    case `select_opt "${tc_pos_options[@]}"` in
+        *)  tc_pos_horiz=${tc_pos_options[$?]};;
+    esac
+    echo
+
+    top="(text_h*$text_margin_factor_top)"
+    bottom="(h-(text_h*$text_margin_factor_bottom))"
+    left="(text_h*$text_margin_factor_top)"
+    right="((w-text_w)-(text_h*$text_margin_factor_top))"
+
+    case $tc_pos_vert in
+        top)    timecode_pos_y=$top;;
+        bottom) timecode_pos_y=$bottom;;
+    esac
+    echo
+
+    case $tc_pos_horiz in
+        left)   timecode_pos_x=$left;;
+        right)  timecode_pos_x=$right;;
+    esac
+    echo
+
+    eval $(ffprobe -v quiet -show_format -of flat=s=_ -show_entries stream=height,width $source_fullpath)
+    width_height="${streams_stream_0_width}x${streams_stream_0_height}"
+    echo
+
+    ffmpeg -f lavfi -i color=c=black:s=$width_height -i $source_fullpath -vf \
+    "fps=${frames_per_sec},\
+    setpts=${speed}*PTS,\
+    scale=${scale},\
+    fade=\
+        type=out:\
+        duration=${fade_out}:\
+        start_time=${fade_out_offset},\
+    split[s0][s1];[s0]palettegen=transparency_color=black[p];[s1][p]paletteuse,\
+    format=yuv444p,\
+    drawtext=\
+        fontfile=monofonto.ttf:\
+        fontsize=18:\
+        box=1:\
+        boxcolor=black@0.5:\
+        boxborderw=5:\
+        fontcolor=white@0.5:\
+        x=$timecode_pos_x:\
+        y=$timecode_pos_y:\
+        timecode='00\:00\:00\:00':\
+        rate=${frames_per_sec},\
+    format=yuv420p" \
+    -loop 0 $output_fullpath.gif
+    # drawbox=y=ih/PHI:\
+    #     color=black@0.4:\
+    #     width=iw:\
+    #     height=48:\
+    #     t=fill,\
+}
+
+if [ "${1}" != "--source-only" ]; then
+    togif_bash "${@}"
+fi
